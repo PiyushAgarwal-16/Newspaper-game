@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Daily Stack: Newspaper Tower</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #2b1d19;
+            font-family: 'Space Mono', monospace;
+        }
+        .serif-title {
+            font-family: 'Playfair Display', Georgia, serif;
+        }
+        /* Mobile-first portrait container */
+        #app-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            height: 100dvh;
+            margin: 0 auto;
+            background-color: #fa6f53;
+            overflow: hidden;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: pointer;
+        }
+        /* Vintage newspaper styled modal card */
+        .paper-card {
+            background-color: #f6f1e3;
+            background-image: 
+                radial-gradient(rgba(139, 115, 85, 0.08) 1px, transparent 0),
+                linear-gradient(to bottom, rgba(230, 220, 198, 0.4) 0%, rgba(246, 241, 227, 0.9) 100%);
+            background-size: 16px 16px, 100% 100%;
+            color: #1e1b18;
+            border: 3px solid #1e1b18;
+            box-shadow: 8px 8px 0px rgba(30, 27, 24, 0.85);
+        }
+        .ink-btn {
+            background-color: #1e1b18;
+            color: #f6f1e3;
+            border: 2px solid #1e1b18;
+            box-shadow: 4px 4px 0px #fa6f53, 4px 4px 0px 2px #1e1b18;
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+        .ink-btn:active {
+            transform: translate(3px, 3px);
+            box-shadow: 1px 1px 0px #fa6f53, 1px 1px 0px 2px #1e1b18;
+        }
+        .double-rule {
+            border-top: 3px solid #1e1b18;
+            border-bottom: 1px solid #1e1b18;
+            height: 6px;
+        }
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.04); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2.2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center">
+
+    <div id="app-wrapper">
+        <!-- Top HUD Overlay -->
+        <div class="absolute top-0 left-0 right-0 z-10 p-3 pointer-events-none flex flex-col gap-2">
+            <!-- Top Row: Score, Best, Level, Mute -->
+            <div class="flex items-stretch justify-between gap-2">
+                <!-- Score & High Score Box -->
+                <div class="paper-card px-3 py-1.5 rounded-lg flex items-center gap-4 pointer-events-auto shadow-md">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-wider text-stone-600 font-bold">Score</div>
+                        <div id="hud-score" class="text-2xl font-bold leading-none serif-title">0</div>
+                    </div>
+                    <div class="h-7 w-[1.5px] bg-stone-800/30"></div>
+                    <div>
+                        <div class="text-[10px] uppercase tracking-wider text-stone-600 font-bold">Best</div>
+                        <div id="hud-best" class="text-lg font-bold leading-none text-stone-700">0</div>
+                    </div>
+                </div>
+
+                <!-- Speed/Edition & Audio Controls -->
+                <div class="flex items-center gap-1.5 pointer-events-auto">
+                    <div class="paper-card px-2.5 py-1.5 rounded-lg text-center shadow-md">
+                        <div class="text-[9px] uppercase tracking-wider text-stone-600 font-bold">Speed</div>
+                        <div id="hud-speed" class="text-xs font-bold leading-tight">1.0x</div>
+                    </div>
+                    <button id="mute-btn" aria-label="Toggle Sound" class="paper-card w-10 h-full rounded-lg flex items-center justify-center active:translate-y-0.5 transition shadow-md">
+                        <svg id="icon-sound-on" class="w-5 h-5 text-stone-900" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"></path>
+                        </svg>
+                        <svg id="icon-sound-off" class="w-5 h-5 text-red-700 hidden" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                            <line x1="23" y1="9" x2="17" y2="15" stroke-linecap="round"></line>
+                            <line x1="17" y1="9" x2="23" y2="15" stroke-linecap="round"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Second Row: Tower Balance / Center of Gravity Meter -->
+            <div class="paper-card px-3 py-1.5 rounded-lg shadow-md flex flex-col gap-1">
+                <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
+                    <span class="text-stone-700">Tower Balance</span>
+                    <span id="balance-status" class="text-emerald-700 font-bold">STABLE</span>
+                </div>
+                <div class="relative w-full h-3 bg-stone-300 rounded-full overflow-hidden border border-stone-800">
+                    <!-- Safe & Danger Zones background -->
+                    <div class="absolute inset-0 flex">
+                        <div class="w-1/5 bg-red-500/40"></div>
+                        <div class="w-1/5 bg-amber-500/30"></div>
+                        <div class="w-1/5 bg-emerald-500/35"></div>
+                        <div class="w-1/5 bg-amber-500/30"></div>
+                        <div class="w-1/5 bg-red-500/40"></div>
+                    </div>
+                    <!-- Center Tick Mark -->
+                    <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-stone-900 -translate-x-1/2 z-10"></div>
+                    <!-- Dynamic Center-of-Gravity Indicator Dot -->
+                    <div id="balance-needle" class="absolute top-0 bottom-0 w-3 h-3 rounded-full bg-stone-900 border-2 border-amber-100 shadow transition-transform duration-75 z-20" style="left: 50%; transform: translateX(-50%);"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Game Canvas -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Start Screen Modal Overlay -->
+        <div id="start-modal" class="absolute inset-0 z-20 flex items-center justify-center p-5 bg-black/40 backdrop-blur-[2px]">
+            <div class="paper-card w-full max-w-sm rounded-xl p-5 flex flex-col gap-3 text-center">
+                <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest border-b border-stone-800 pb-1">
+                    <span>Vol. I — No. 1</span>
+                    <span>Morning Edition</span>
+                    <span>Price 5¢</span>
+                </div>
+
+                <h1 class="serif-title text-4xl font-black tracking-tight leading-none uppercase my-1">
+                    Daily Stack
+                </h1>
+                <div class="text-xs font-bold uppercase tracking-widest bg-stone-900 text-amber-50 py-1 px-2 rounded">
+                    Newspaper Tower Arcade
+                </div>
+
+                <div class="double-rule my-1"></div>
+
+                <!-- Visual Rules Summary -->
+                <div class="text-left text-xs space-y-2.5 bg-stone-200/70 p-3 rounded-lg border border-stone-800/30 leading-relaxed">
+                    <div class="flex items-start gap-2.5">
+                        <span class="font-bold bg-stone-900 text-white rounded px-1.5 py-0.5 text-[10px]">1</span>
+                        <p><strong>Tap Anywhere</strong> to drop the fluttering newspaper straight down onto the bundle.</p>
+                    </div>
+                    <div class="flex items-start gap-2.5">
+                        <span class="font-bold bg-stone-900 text-white rounded px-1.5 py-0.5 text-[10px]">2</span>
+                        <p><strong>Precision Counts:</strong> Dead-center alignment awards <strong>+5 pts</strong>. Sloppy corners will slide right off!</p>
+                    </div>
+                    <div class="flex items-start gap-2.5">
+                        <span class="font-bold bg-stone-900 text-white rounded px-1.5 py-0.5 text-[10px]">3</span>
+                        <p><strong>Watch the Balance:</strong> Leaning too far to one side over multiple turns will topple the entire stack.</p>
+                    </div>
+                    <div class="flex items-start gap-2.5">
+                        <span class="font-bold bg-stone-900 text-white rounded px-1.5 py-0.5 text-[10px]">4</span>
+                        <p><strong>Don't Delay:</strong> If a floating paper hits the stack or drops past the top level, it's Game Over!</p>
+                    </div>
+                </div>
+
+                <button id="start-btn" class="ink-btn mt-2 py-3.5 px-6 rounded-lg font-bold text-base uppercase tracking-wider animate-pulse-slow cursor-pointer">
+                    Start Stacking
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Over Modal Overlay -->
+        <div id="gameover-modal" class="absolute inset-0 z-20 hidden items-center justify-center p-5 bg-black/50 backdrop-blur-[2px]">
+            <div class="paper-card w-full max-w-sm rounded-xl p-5 flex flex-col gap-3 text-center">
+                <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest border-b border-stone-800 pb-1">
+                    <span>Extra! Extra!</span>
+                    <span>Late Edition</span>
+                    <span>Stop Press</span>
+                </div>
+
+                <h2 class="serif-title text-3xl font-black tracking-tight uppercase text-red-800 mt-1">
+                    Stack Collapsed!
+                </h2>
+
+                <!-- Failure Headline Banner -->
+                <div id="gameover-reason" class="bg-stone-900 text-amber-100 font-bold text-xs uppercase tracking-wider py-2 px-3 rounded">
+                    Missed the Stack!
+                </div>
+
+                <div class="double-rule my-0.5"></div>
+
+                <!-- Score Breakdown -->
+                <div class="grid grid-cols-3 gap-2 my-1">
+                    <div class="bg-stone-200/80 p-2.5 rounded-lg border border-stone-800/30">
+                        <div class="text-[10px] uppercase font-bold text-stone-600">Score</div>
+                        <div id="final-score" class="serif-title text-2xl font-black text-stone-900">0</div>
+                    </div>
+                    <div class="bg-stone-200/80 p-2.5 rounded-lg border border-stone-800/30">
+                        <div class="text-[10px] uppercase font-bold text-stone-600">Papers</div>
+                        <div id="final-count" class="serif-title text-2xl font-black text-stone-900">0</div>
+                    </div>
+                    <div class="bg-stone-200/80 p-2.5 rounded-lg border border-stone-800/30">
+                        <div class="text-[10px] uppercase font-bold text-stone-600">Best</div>
+                        <div id="final-best" class="serif-title text-2xl font-black text-emerald-800">0</div>
+                    </div>
+                </div>
+
+                <p id="gameover-subtext" class="text-xs text-stone-700 italic px-2">
+                    "Readers stunned as morning delivery tumbles to the pavement."
+                </p>
+
+                <button id="restart-btn" class="ink-btn mt-2 py-3.5 px-6 rounded-lg font-bold text-base uppercase tracking-wider cursor-pointer">
+                    Print Next Edition
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * WEB AUDIO SYNTHESIZER
+         * Generates vintage paper rustles, drop whooshes, stack thuds, chimes, and crash sounds
+         * without requiring any external audio files.
+         */
+        class SoundEffects {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) {
+                        this.ctx = new AudioCtx();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            toggleMute() {
+                this.muted = !this.muted;
+                return this.muted;
+            }
+
+            // Soft crisp paperwhoosh when hard-dropping
+            playDropWhoosh() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(320, now);
+                    osc.frequency.exponentialRampToValueAtTime(95, now + 0.14);
+
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } catch (e) {}
+            }
+
+            // Newspaper slap/thud + pitch reward based on points (1 to 5)
+            playLand(points) {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+
+                    // 1. Paper slap noise burst
+                    const bufferSize = this.ctx.sampleRate * 0.09;
+                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.35));
+                    }
+                    const noise = this.ctx.createBufferSource();
+                    noise.buffer = buffer;
+
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'bandpass';
+                    filter.frequency.setValueAtTime(900, now);
+
+                    const noiseGain = this.ctx.createGain();
+                    noiseGain.gain.setValueAtTime(0.35, now);
+                    noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+
+                    noise.connect(filter);
+                    filter.connect(noiseGain);
+                    noiseGain.connect(this.ctx.destination);
+                    noise.start(now);
+
+                    // 2. Melodic tone feedback
+                    const osc = this.ctx.createOscillator();
+                    const toneGain = this.ctx.createGain();
+                    const baseFreqs = { 1: 220, 2: 277.18, 3: 329.63, 4: 440, 5: 554.37 };
+                    const freq = baseFreqs[points] || 300;
+
+                    osc.type = points === 5 ? 'triangle' : 'sine';
+                    osc.frequency.setValueAtTime(freq, now);
+                    if (points === 5) {
+                        // Harmonic sparkle for Perfect +5
+                        osc.frequency.setValueAtTime(523.25, now); // C5
+                        osc.frequency.setValueAtTime(659.25, now + 0.06); // E5
+                        osc.frequency.setValueAtTime(783.99, now + 0.12); // G5
+                    }
+
+                    const duration = points === 5 ? 0.32 : 0.16;
+                    toneGain.gain.setValueAtTime(0.22, now);
+                    toneGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+                    osc.connect(toneGain);
+                    toneGain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + duration);
+                } catch (e) {}
+            }
+
+            // Low rumble + paper scatter on tower collapse
+            playCollapse() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+
+                    // Low descending sawtooth
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(38, now + 0.55);
+
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.56);
+
+                    // Crumple noise burst
+                    const bufferSize = this.ctx.sampleRate * 0.45;
+                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.45));
+                    }
+                    const noise = this.ctx.createBufferSource();
+                    noise.buffer = buffer;
+
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(650, now);
+
+                    const nGain = this.ctx.createGain();
+                    nGain.gain.setValueAtTime(0.3, now);
+                    nGain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+
+                    noise.connect(filter);
+                    filter.connect(nGain);
+                    nGain.connect(this.ctx.destination);
+                    noise.start(now);
+                } catch (e) {}
+            }
+        }
+
+        /**
+         * MAIN GAME CONTROLLER
+         */
+        class NewspaperStackGame {
+            constructor() {
+                this.canvas = document.getElementById('game-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.sfx = new SoundEffects();
+
+                // UI DOM Elements
+                this.scoreEl = document.getElementById('hud-score');
+                this.bestEl = document.getElementById('hud-best');
+                this.speedEl = document.getElementById('hud-speed');
+                this.balanceNeedle = document.getElementById('balance-needle');
+                this.balanceStatus = document.getElementById('balance-status');
+
+                this.startModal = document.getElementById('start-modal');
+                this.gameOverModal = document.getElementById('gameover-modal');
+                this.reasonEl = document.getElementById('gameover-reason');
+                this.subtextEl = document.getElementById('gameover-subtext');
+                this.finalScoreEl = document.getElementById('final-score');
+                this.finalCountEl = document.getElementById('final-count');
+                this.finalBestEl = document.getElementById('final-best');
+
+                // Persistent High Score
+                this.highScore = parseInt(localStorage.getItem('dailyStack_highScore') || '0', 10);
+                this.bestEl.textContent = this.highScore;
+
+                // Dimensions & Constants
+                this.width = 400;
+                this.height = 700;
+                this.paperWidth = 132;
+                this.paperHeight = 26;
+                this.baseBlockHeight = 40;
+
+                // Game State
+                this.state = 'START'; // START, PLAYING, COLLAPSING, GAMEOVER
+                this.score = 0;
+                this.stackedCount = 0;
+                this.stack = [];
+                this.activePaper = null;
+                this.floatingTexts = [];
+                this.particles = [];
+                this.bgClouds = [];
+
+                // Camera & Tower Stability Physics
+                this.cameraY = 0;
+                this.targetCameraY = 0;
+                this.towerLeanRatio = 0; // -1.0 to +1.0 (beyond +-1.0 triggers collapse)
+                this.visualLeanAngle = 0;
+                this.wobblePhase = 0;
+                this.collapseTimer = 0;
+                this.pendingGameOverReason = '';
+                this.pendingGameOverSubtext = '';
+
+                this.lastTimestamp = performance.now();
+
+                this.initClouds();
+                this.bindEvents();
+                this.resize();
+                this.resetWorldPreview();
+
+                requestAnimationFrame((ts) => this.loop(ts));
+            }
+
+            initClouds() {
+                this.bgClouds = [];
+                for (let i = 0; i < 6; i++) {
+                    this.bgClouds.push({
+                        x: Math.random() * 450,
+                        y: Math.random() * 700,
+                        radius: 28 + Math.random() * 35,
+                        speed: 6 + Math.random() * 10
+                    });
+                }
+            }
+
+            bindEvents() {
+                window.addEventListener('resize', () => this.resize());
+
+                // Tap anywhere on the canvas to drop the newspaper
+                this.canvas.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    if (this.state === 'PLAYING') {
+                        this.triggerHardDrop();
+                    }
+                });
+
+                // Keyboard support (Space / Down Arrow) for desktop testing
+                window.addEventListener('keydown', (e) => {
+                    if ((e.code === 'Space' || e.code === 'ArrowDown') && this.state === 'PLAYING') {
+                        e.preventDefault();
+                        this.triggerHardDrop();
+                    }
+                });
+
+                // Start & Restart Buttons
+                document.getElementById('start-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.sfx.init();
+                    this.startGame();
+                });
+
+                document.getElementById('restart-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.sfx.init();
+                    this.startGame();
+                });
+
+                // Mute Button
+                document.getElementById('mute-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.sfx.init();
+                    const isMuted = this.sfx.toggleMute();
+                    document.getElementById('icon-sound-on').classList.toggle('hidden', isMuted);
+                    document.getElementById('icon-sound-off').classList.toggle('hidden', !isMuted);
+                });
+            }
+
+            resize() {
+                const wrapper = document.getElementById('app-wrapper');
+                const rect = wrapper.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+
+                this.width = rect.width;
+                this.height = rect.height;
+
+                this.canvas.width = this.width * dpr;
+                this.canvas.height = this.height * dpr;
+                this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                // Responsive newspaper dimensions relative to portrait width
+                this.paperWidth = Math.min(144, Math.max(112, Math.round(this.width * 0.34)));
+                this.paperHeight = 25;
+                this.baseBlockHeight = 38;
+                this.groundY = this.height - 70;
+            }
+
+            resetWorldPreview() {
+                this.groundY = this.height - 70;
+                this.stack = [
+                    {
+                        x: this.width / 2,
+                        y: this.groundY - this.baseBlockHeight / 2,
+                        w: this.paperWidth,
+                        h: this.baseBlockHeight,
+                        isBase: true,
+                        seed: 1,
+                        vx: 0,
+                        vy: 0,
+                        angle: 0,
+                        vAngle: 0
+                    }
+                ];
+                this.cameraY = 0;
+                this.targetCameraY = 0;
+                this.towerLeanRatio = 0;
+                this.visualLeanAngle = 0;
+            }
+
+            startGame() {
+                this.startModal.classList.add('hidden');
+                this.gameOverModal.classList.add('hidden');
+                this.gameOverModal.classList.remove('flex');
+
+                this.score = 0;
+                this.stackedCount = 0;
+                this.floatingTexts = [];
+                this.particles = [];
+                this.towerLeanRatio = 0;
+                this.visualLeanAngle = 0;
+                this.cameraY = 0;
+                this.targetCameraY = 0;
+
+                this.resetWorldPreview();
+                this.updateHUD();
+                this.spawnNextPaper();
+                this.state = 'PLAYING';
+            }
+
+            /**
+             * Spawns a new floating newspaper at the top of the current camera view.
+             * Gradually scales both downward velocity and horizontal zig-zag speed.
+             */
+            spawnNextPaper() {
+                const topBlock = this.stack[this.stack.length - 1];
+                const topEdgeY = topBlock.y - topBlock.h / 2;
+
+                // Keep the top of the tower comfortably in the lower-third of the screen
+                const idealScreenY = this.height * 0.72;
+                const currentScreenY = topEdgeY + this.targetCameraY;
+                if (currentScreenY < idealScreenY) {
+                    this.targetCameraY += (idealScreenY - currentScreenY);
+                }
+
+                // Difficulty scaling with each stacked newspaper
+                const levelFactor = this.stackedCount;
+                const speedMultiplier = 1 + levelFactor * 0.075;
+                this.speedEl.textContent = speedMultiplier.toFixed(1) + 'x';
+
+                // Vertical float speed & horizontal zig-zag frequency
+                const floatFallSpeed = (44 + Math.min(85, levelFactor * 3.1));
+                const swayFrequency = (2.15 + Math.min(2.6, levelFactor * 0.085));
+
+                // Swing amplitude covers enough width so the player must time their tap
+                const maxSwing = (this.width - this.paperWidth) * 0.45;
+                const spawnY = -this.targetCameraY + 118;
+
+                this.activePaper = {
+                    x: this.width / 2,
+                    y: spawnY,
+                    w: this.paperWidth,
+                    h: this.paperHeight,
+                    state: 'FLOATING', // 'FLOATING' or 'DROPPING'
+                    centerX: this.width / 2,
+                    amplitude: maxSwing,
+                    swayFreq: swayFrequency,
+                    swayTime: Math.random() * Math.PI * 2,
+                    floatSpeedY: floatFallSpeed,
+                    dropSpeedY: 1180,
+                    tiltAngle: 0,
+                    seed: Math.floor(Math.random() * 1000),
+                    vx: 0,
+                    vy: 0,
+                    vAngle: 0
+                };
+            }
+
+            /**
+             * Stops horizontal zig-zag movement immediately and drops the paper straight down.
+             */
+            triggerHardDrop() {
+                if (!this.activePaper || this.activePaper.state !== 'FLOATING') return;
+                this.activePaper.state = 'DROPPING';
+                this.activePaper.tiltAngle = 0; // Flatten out for a crisp vertical drop
+                this.sfx.playDropWhoosh();
+
+                // Spawn subtle wind-streak lines above the dropping paper
+                for (let i = 0; i < 4; i++) {
+                    this.particles.push({
+                        x: this.activePaper.x + (Math.random() - 0.5) * (this.activePaper.w * 0.7),
+                        y: this.activePaper.y - 10,
+                        vx: 0,
+                        vy: -140 - Math.random() * 80,
+                        w: 2,
+                        h: 18 + Math.random() * 14,
+                        color: 'rgba(255, 255, 255, 0.55)',
+                        alpha: 0.8,
+                        life: 0.22,
+                        maxLife: 0.22,
+                        isStreak: true
+                    });
+                }
+            }
+
+            /**
+             * Evaluates alignment, corner stability, and cumulative tower center-of-mass
+             * when a newspaper lands on the top of the stack.
+             */
+            evaluateLanding(paper, topBlock) {
+                const topSurfaceY = topBlock.y - topBlock.h / 2;
+                paper.y = topSurfaceY - paper.h / 2;
+
+                const dx = paper.x - topBlock.x;
+                const absDx = Math.abs(dx);
+                const w = paper.w;
+
+                // 1. Check if completely missed horizontally
+                if (absDx >= w) {
+                    this.triggerCollapse(
+                        'Missed the Stack!',
+                        '"Delivery boy throws bundle straight onto the sidewalk!"',
+                        dx >= 0 ? 1 : -1,
+                        true
+                    );
+                    return;
+                }
+
+                // 2. Check if landed on the extreme corner / poorly balanced (overhang > 54% of width)
+                const maxCornerOverhang = w * 0.54;
+                if (absDx > maxCornerOverhang) {
+                    // Add the tipping paper to the stack so it visibly flips off the corner
+                    this.stack.push({
+                        x: paper.x,
+                        y: paper.y,
+                        w: paper.w,
+                        h: paper.h,
+                        isBase: false,
+                        seed: paper.seed,
+                        vx: (dx > 0 ? 1 : -1) * 140,
+                        vy: -60,
+                        angle: 0,
+                        vAngle: (dx > 0 ? 1 : -1) * 5.5
+                    });
+                    this.activePaper = null;
+                    this.triggerCollapse(
+                        'Slid Off the Corner!',
+                        '"Poorly balanced bundle tips over the edge and brings down the pile!"',
+                        dx >= 0 ? 1 : -1,
+                        false
+                    );
+                    return;
+                }
+
+                // 3. Valid landing on top of the stack! Calculate alignment score (5 down to 1)
+                const overhangRatio = absDx / maxCornerOverhang; // 0.0 (dead center) to 1.0 (edge limit)
+                let points = 1;
+                let label = 'BARELY! +1';
+                let badgeColor = '#dc2626';
+
+                if (absDx <= w * 0.055) {
+                    points = 5;
+                    label = 'PERFECT! +5';
+                    badgeColor = '#15803d';
+                } else if (overhangRatio <= 0.28) {
+                    points = 4;
+                    label = 'GREAT! +4';
+                    badgeColor = '#047857';
+                } else if (overhangRatio <= 0.55) {
+                    points = 3;
+                    label = 'GOOD! +3';
+                    badgeColor = '#b45309';
+                } else if (overhangRatio <= 0.80) {
+                    points = 2;
+                    label = 'OKAY +2';
+                    badgeColor = '#c2410c';
+                }
+
+                // Commit paper to stack
+                this.stack.push({
+                    x: paper.x,
+                    y: paper.y,
+                    w: paper.w,
+                    h: paper.h,
+                    isBase: false,
+                    seed: paper.seed,
+                    vx: 0,
+                    vy: 0,
+                    angle: 0,
+                    vAngle: 0,
+                    flash: points === 5 ? 1.0 : 0
+                });
+                this.activePaper = null;
+
+                // Update Score & Counts
+                this.stackedCount++;
+                this.score += points;
+                if (this.score > this.highScore) {
+                    this.highScore = this.score;
+                    localStorage.setItem('dailyStack_highScore', String(this.highScore));
+                }
+
+                this.sfx.playLand(points);
+                this.spawnLandingFeedback(paper.x, paper.y - paper.h / 2, label, badgeColor, points === 5);
+
+                // 4. Update Cumulative Tower Center-of-Mass & Torque Stability
+                const isBalanced = this.updateTowerStability();
+                this.updateHUD();
+
+                if (!isBalanced) {
+                    this.triggerCollapse(
+                        'Tower Lost Balance!',
+                        '"Years of leaning to one side finally push the center of gravity past the brink!"',
+                        this.towerLeanRatio >= 0 ? 1 : -1,
+                        false
+                    );
+                    return;
+                }
+
+                // Spawn the next falling newspaper
+                this.spawnNextPaper();
+            }
+
+            /**
+             * Computes the cumulative center-of-mass offset and cumulative off-center torque.
+             * Consistently stacking slightly to one side pushes `towerLeanRatio` past +-1.0,
+             * causing the entire newspaper tower to wobble and topple over.
+             */
+            updateTowerStability() {
+                const base = this.stack[0];
+                const count = this.stack.length;
+
+                // Center of mass of all stacked newspapers relative to the base bundle
+                let sumX = 0;
+                // Cumulative torque relative to each underlying layer
+                let cumulativeDrift = 0;
+
+                for (let i = 1; i < count; i++) {
+                    sumX += (this.stack[i].x - base.x);
+                    cumulativeDrift += (this.stack[i].x - this.stack[i - 1].x);
+                }
+
+                const avgComOffset = sumX / count;
+                // Combine global CoM shift and cumulative step drift so sustained one-sided stacking topples the tower
+                const effectiveInstability = avgComOffset * 0.65 + cumulativeDrift * 0.22;
+                const stabilityThreshold = this.paperWidth * 0.40;
+
+                this.towerLeanRatio = effectiveInstability / stabilityThreshold;
+
+                return Math.abs(this.towerLeanRatio) < 1.0;
+            }
+
+            updateHUD() {
+                this.scoreEl.textContent = this.score;
+                this.bestEl.textContent = this.highScore;
+
+                // Update Balance Needle (-1.0 to +1.0 mapped to 5% .. 95%)
+                const clamped = Math.max(-1, Math.min(1, this.towerLeanRatio));
+                const percent = 50 + clamped * 45;
+                this.balanceNeedle.style.left = `${percent}%`;
+
+                const absLean = Math.abs(this.towerLeanRatio);
+                if (absLean < 0.38) {
+                    this.balanceStatus.textContent = 'STABLE';
+                    this.balanceStatus.className = 'text-emerald-700 font-bold';
+                } else if (absLean < 0.72) {
+                    this.balanceStatus.textContent = 'TILTING';
+                    this.balanceStatus.className = 'text-amber-700 font-bold';
+                } else {
+                    this.balanceStatus.textContent = 'CRITICAL LEAN!';
+                    this.balanceStatus.className = 'text-red-700 font-bold animate-pulse';
+                }
+            }
+
+            spawnLandingFeedback(x, y, text, color, isPerfect) {
+                this.floatingTexts.push({
+                    x,
+                    y: y - 8,
+                    text,
+                    color,
+                    alpha: 1,
+                    vy: -55,
+                    scale: isPerfect ? 1.25 : 1.0
+                });
+
+                // Dust / paperconfetti burst
+                const count = isPerfect ? 18 : 7;
+                for (let i = 0; i < count; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 40 + Math.random() * (isPerfect ? 140 : 70);
+                    this.particles.push({
+                        x: x + (Math.random() - 0.5) * this.paperWidth * 0.6,
+                        y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed - 30,
+                        w: isPerfect ? 6 : 4,
+                        h: isPerfect ? 6 : 4,
+                        color: isPerfect
+                            ? (i % 2 === 0 ? '#facc15' : '#ffffff')
+                            : '#f6f1e3',
+                        alpha: 1,
+                        life: 0.45 + Math.random() * 0.25,
+                        maxLife: 0.7,
+                        isStreak: false
+                    });
+                }
+            }
+
+            /**
+             * Initiates dramatic physics collapse of the newspaper stack before showing the Game Over modal.
+             */
+            triggerCollapse(reason, subtext, dir = 1, keepActivePaperFalling = false) {
+                if (this.state === 'COLLAPSING' || this.state === 'GAMEOVER') return;
+                this.state = 'COLLAPSING';
+                this.collapseTimer = 0;
+                this.pendingGameOverReason = reason;
+                this.pendingGameOverSubtext = subtext;
+                this.sfx.playCollapse();
+
+                // Apply outward scatter velocities to stacked newspapers (except the tied base block)
+                const total = this.stack.length;
+                for (let i = 1; i < total; i++) {
+                    const block = this.stack[i];
+                    const heightRatio = i / total;
+                    if (block.vx === 0 && block.vy === 0) {
+                        block.vx = dir * (55 + heightRatio * 170 + (Math.random() - 0.3) * 60);
+                        block.vy = -40 - Math.random() * 90;
+                        block.vAngle = dir * (1.8 + heightRatio * 4.5 + (Math.random() - 0.5) * 2);
+                    }
+                }
+
+                if (keepActivePaperFalling && this.activePaper) {
+                    this.activePaper.vx = dir * (40 + Math.random() * 60);
+                    this.activePaper.vy = 260;
+                    this.activePaper.vAngle = dir * 3.5;
+                } else {
+                    this.activePaper = null;
+                }
+            }
+
+            showGameOverModal() {
+                this.state = 'GAMEOVER';
+                this.reasonEl.textContent = this.pendingGameOverReason;
+                this.subtextEl.textContent = this.pendingGameOverSubtext;
+                this.finalScoreEl.textContent = this.score;
+                this.finalCountEl.textContent = this.stackedCount;
+                this.finalBestEl.textContent = this.highScore;
+
+                this.gameOverModal.classList.remove('hidden');
+                this.gameOverModal.classList.add('flex');
+            }
+
+            /**
+             * MAIN UPDATE STEP
+             */
+            update(dt) {
+                // Smooth camera tracking
+                this.cameraY += (this.targetCameraY - this.cameraY) * Math.min(1, dt * 6.5);
+
+                // Subtle background clouds drift
+                for (const cloud of this.bgClouds) {
+                    cloud.x += cloud.speed * dt;
+                    if (cloud.x - cloud.radius * 2 > this.width) {
+                        cloud.x = -cloud.radius * 2;
+                    }
+                }
+
+                // Smooth visual tower wobble when leaning
+                this.wobblePhase += dt * (3.5 + Math.abs(this.towerLeanRatio) * 5);
+                const wobbleOsc = Math.sin(this.wobblePhase) * (Math.abs(this.towerLeanRatio) * 0.018);
+                const targetLeanAngle = (this.towerLeanRatio * 0.11) + wobbleOsc;
+                this.visualLeanAngle += (targetLeanAngle - this.visualLeanAngle) * Math.min(1, dt * 8);
+
+                // Decay perfect flash on stacked papers
+                for (const block of this.stack) {
+                    if (block.flash && block.flash > 0) {
+                        block.flash = Math.max(0, block.flash - dt * 2.8);
+                    }
+                }
+
+                // Update Floating Texts
+                for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+                    const ft = this.floatingTexts[i];
+                    ft.y += ft.vy * dt;
+                    ft.alpha -= dt * 1.15;
+                    if (ft.alpha <= 0) this.floatingTexts.splice(i, 1);
+                }
+
+                // Update Particles
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    if (!p.isStreak) p.vy += 320 * dt;
+                    p.life -= dt;
+                    p.alpha = Math.max(0, p.life / p.maxLife);
+                    if (p.life <= 0) this.particles.splice(i, 1);
+                }
+
+                // Handle Collapsing Physics Animation
+                if (this.state === 'COLLAPSING') {
+                    this.collapseTimer += dt;
+                    const gravity = 880;
+
+                    for (let i = 1; i < this.stack.length; i++) {
+                        const b = this.stack[i];
+                        b.x += b.vx * dt;
+                        b.y += b.vy * dt;
+                        b.vy += gravity * dt;
+                        b.angle = (b.angle || 0) + (b.vAngle || 0) * dt;
+                    }
+
+                    if (this.activePaper) {
+                        this.activePaper.x += (this.activePaper.vx || 0) * dt;
+                        this.activePaper.y += (this.activePaper.vy || 300) * dt;
+                        this.activePaper.vy = (this.activePaper.vy || 300) + gravity * dt;
+                        this.activePaper.tiltAngle += (this.activePaper.vAngle || 2) * dt;
+                    }
+
+                    if (this.collapseTimer >= 1.15) {
+                        this.showGameOverModal();
+                    }
+                    return;
+                }
+
+                if (this.state !== 'PLAYING' || !this.activePaper) return;
+
+                const paper = this.activePaper;
+                const topBlock = this.stack[this.stack.length - 1];
+                const topSurfaceY = topBlock.y - topBlock.h / 2;
+
+                if (paper.state === 'FLOATING') {
+                    // 1. Leaf-like Zig-Zag Pendulum Float Motion
+                    paper.swayTime += paper.swayFreq * dt;
+                    paper.x = paper.centerX + Math.sin(paper.swayTime) * paper.amplitude;
+                    paper.y += paper.floatSpeedY * dt;
+
+                    // Aerodynamic bank/flutter angle as it sweeps left and right
+                    paper.tiltAngle = Math.cos(paper.swayTime) * 0.16 + Math.sin(paper.swayTime * 2) * 0.04;
+
+                    const paperBottomY = paper.y + paper.h / 2;
+
+                    // 2. Check Collision with the Existing Stack while still Floating
+                    if (paperBottomY >= topSurfaceY) {
+                        // Did the floating paper hit any block in the tower?
+                        for (let i = this.stack.length - 1; i >= 0; i--) {
+                            const b = this.stack[i];
+                            const horizOverlap = Math.abs(paper.x - b.x) < (paper.w + b.w) * 0.48;
+                            const vertOverlap = Math.abs(paper.y - b.y) < (paper.h + b.h) * 0.48;
+
+                            if (horizOverlap && vertOverlap) {
+                                const pushDir = paper.x < b.x ? 1 : -1;
+                                this.triggerCollapse(
+                                    'Floating Paper Hit the Tower!',
+                                    '"Wait too long to tap and the drifting edition knocks the whole stack down!"',
+                                    pushDir,
+                                    true
+                                );
+                                return;
+                            }
+                        }
+
+                        // 3. Check if the floating paper descended past the top surface of the stack without hitting it
+                        if (paper.y - paper.h / 2 > topSurfaceY + 4) {
+                            const sideDir = paper.x >= topBlock.x ? 1 : -1;
+                            this.triggerCollapse(
+                                'Passed Top of Stack!',
+                                '"The newspaper floated below the top of the pile—impossible to stack now!"',
+                                sideDir,
+                                true
+                            );
+                            return;
+                        }
+                    }
+                } else if (paper.state === 'DROPPING') {
+                    // Tetris-style rapid vertical drop at locked X position
+                    const prevBottomY = paper.y + paper.h / 2;
+                    paper.y += paper.dropSpeedY * dt;
+                    const newBottomY = paper.y + paper.h / 2;
+
+                    // Check if the dropping paper crossed the top surface of the stack
+                    if (prevBottomY <= topSurfaceY + 8 && newBottomY >= topSurfaceY) {
+                        const absDx = Math.abs(paper.x - topBlock.x);
+                        if (absDx < paper.w) {
+                            this.evaluateLanding(paper, topBlock);
+                            return;
+                        }
+                    }
+
+                    // If it missed horizontally, let it fall slightly past the top surface then trigger Game Over
+                    if (paper.y - paper.h / 2 > topSurfaceY + 36 || newBottomY >= this.groundY) {
+                        const dir = paper.x >= topBlock.x ? 1 : -1;
+                        this.triggerCollapse(
+                            'Missed the Stack!',
+                            '"Dropped wide of the target! Keep an eye on the vertical drop guide."',
+                            dir,
+                            true
+                        );
+                        return;
+                    }
+                }
+            }
+
+            /**
+             * MAIN RENDER LOOP
+             */
+            draw() {
+                const ctx = this.ctx;
+                ctx.clearRect(0, 0, this.width, this.height);
+
+                // 1. Primary Background (#fa6f53) + Subtle Vintage Halftone & Sunburst
+                ctx.fillStyle = '#fa6f53';
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                this.drawBackgroundDecor(ctx);
+
+                ctx.save();
+                // Apply smooth vertical camera pan
+                ctx.translate(0, this.cameraY);
+
+                // 2. Height Ruler / Stack Milestone Markers on Left Edge
+                this.drawHeightMarkers(ctx);
+
+                // 3. Draw Newsstand Sidewalk / Wooden Delivery Dock
+                this.drawGround(ctx);
+
+                // 4. Draw Vertical Alignment Guide under the Active Floating Newspaper
+                if (this.state === 'PLAYING' && this.activePaper) {
+                    this.drawAlignmentGuide(ctx, this.activePaper);
+                }
+
+                // 5. Draw Stacked Newspaper Tower (with cumulative lean pivot at base)
+                ctx.save();
+                const base = this.stack[0];
+                if (base && this.state !== 'COLLAPSING') {
+                    ctx.translate(base.x, base.y + base.h / 2);
+                    ctx.rotate(this.visualLeanAngle);
+                    ctx.translate(-base.x, -(base.y + base.h / 2));
+                }
+
+                for (let i = 0; i < this.stack.length; i++) {
+                    const block = this.stack[i];
+                    // Frustum culling for tall towers
+                    const screenY = block.y + this.cameraY;
+                    if (screenY > -80 && screenY < this.height + 100) {
+                        this.drawNewspaperBundle(ctx, block, i === 0);
+                    }
+                }
+                ctx.restore();
+
+                // 6. Draw Active Floating / Dropping Newspaper
+                if (this.activePaper) {
+                    this.drawNewspaperBundle(ctx, {
+                        x: this.activePaper.x,
+                        y: this.activePaper.y,
+                        w: this.activePaper.w,
+                        h: this.activePaper.h,
+                        angle: this.activePaper.tiltAngle,
+                        seed: this.activePaper.seed,
+                        isFloating: this.activePaper.state === 'FLOATING'
+                    }, false);
+                }
+
+                // 7. Draw Particles & Floating Score Popups
+                this.drawParticles(ctx);
+                this.drawFloatingTexts(ctx);
+
+                ctx.restore();
+            }
+
+            drawBackgroundDecor(ctx) {
+                // Soft warm glow near bottom
+                const grad = ctx.createRadialGradient(
+                    this.width / 2, this.height * 0.75, 20,
+                    this.width / 2, this.height * 0.75, this.width * 0.9
+                );
+                grad.addColorStop(0, 'rgba(255, 224, 185, 0.22)');
+                grad.addColorStop(1, 'rgba(250, 111, 83, 0)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                // Drifting stylized paper-cut clouds
+                ctx.fillStyle = 'rgba(255, 243, 228, 0.16)';
+                for (const c of this.bgClouds) {
+                    ctx.beginPath();
+                    ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+                    ctx.arc(c.x + c.radius * 0.7, c.y + 4, c.radius * 0.75, 0, Math.PI * 2);
+                    ctx.arc(c.x - c.radius * 0.7, c.y + 6, c.radius * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Distant city skyline silhouette anchored to ground
+                const parallaxY = this.cameraY * 0.25;
+                const skylineBaseY = this.groundY + parallaxY;
+                if (skylineBaseY < this.height + 200) {
+                    ctx.fillStyle = 'rgba(120, 42, 30, 0.18)';
+                    const buildings = [
+                        { x: 0, w: 55, h: 110 },
+                        { x: 50, w: 45, h: 75 },
+                        { x: 90, w: 65, h: 145 },
+                        { x: 150, w: 50, h: 95 },
+                        { x: 240, w: 60, h: 130 },
+                        { x: 295, w: 50, h: 85 },
+                        { x: 340, w: 70, h: 155 },
+                        { x: 405, w: 60, h: 100 }
+                    ];
+                    for (const b of buildings) {
+                        ctx.fillRect(b.x, skylineBaseY - b.h, b.w, b.h + 120);
+                    }
+                }
+            }
+
+            drawHeightMarkers(ctx) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(30, 27, 24, 0.35)';
+                ctx.strokeStyle = 'rgba(30, 27, 24, 0.22)';
+                ctx.lineWidth = 1;
+                ctx.font = 'bold 10px "Space Mono", monospace';
+
+                // Draw milestone lines every 5 newspapers
+                for (let n = 5; n <= Math.max(30, this.stackedCount + 15); n += 5) {
+                    const y = this.groundY - this.baseBlockHeight - (n * this.paperHeight);
+                    const screenY = y + this.cameraY;
+                    if (screenY < 80 || screenY > this.height - 40) continue;
+
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(18, y);
+                    ctx.stroke();
+
+                    ctx.fillText(`${n}x`, 22, y + 3);
+                }
+                ctx.restore();
+            }
+
+            drawGround(ctx) {
+                // Sidewalk curb & wooden newsstand pallet
+                ctx.fillStyle = '#2b211e';
+                ctx.fillRect(0, this.groundY, this.width, 160);
+
+                // Top curb highlight
+                ctx.fillStyle = '#d6cab8';
+                ctx.fillRect(0, this.groundY, this.width, 8);
+                ctx.strokeStyle = '#1e1b18';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(0, this.groundY);
+                ctx.lineTo(this.width, this.groundY);
+                ctx.stroke();
+
+                // Wooden stand under the base bundle
+                const standW = this.paperWidth + 36;
+                const standX = (this.width - standW) / 2;
+                ctx.fillStyle = '#8c583a';
+                ctx.strokeStyle = '#1e1b18';
+                ctx.lineWidth = 2.5;
+                ctx.fillRect(standX, this.groundY - 8, standW, 10);
+                ctx.strokeRect(standX, this.groundY - 8, standW, 10);
+            }
+
+            drawAlignmentGuide(ctx, paper) {
+                const topBlock = this.stack[this.stack.length - 1];
+                if (!topBlock) return;
+                const topSurfaceY = topBlock.y - topBlock.h / 2;
+                const paperBottomY = paper.y + paper.h / 2;
+
+                if (paperBottomY >= topSurfaceY) return;
+
+                ctx.save();
+                // Subtle vertical projection edges showing where the paper will land
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = 'rgba(255, 248, 235, 0.45)';
+                ctx.lineWidth = 1.5;
+
+                const leftEdge = paper.x - paper.w / 2;
+                const rightEdge = paper.x + paper.w / 2;
+
+                ctx.beginPath();
+                ctx.moveTo(leftEdge, paperBottomY);
+                ctx.lineTo(leftEdge, topSurfaceY);
+                ctx.moveTo(rightEdge, paperBottomY);
+                ctx.lineTo(rightEdge, topSurfaceY);
+                ctx.stroke();
+
+                // Centerline tick on the top surface of the stack
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(30, 27, 24, 0.35)';
+                const shadowLeft = Math.max(topBlock.x - topBlock.w / 2, leftEdge);
+                const shadowRight = Math.min(topBlock.x + topBlock.w / 2, rightEdge);
+                if (shadowRight > shadowLeft) {
+                    ctx.fillRect(shadowLeft, topSurfaceY - 3, shadowRight - shadowLeft, 3);
+                }
+
+                // Draw danger line across the top level of the stack so player knows not to let it float below
+                ctx.setLineDash([3, 6]);
+                ctx.strokeStyle = 'rgba(185, 28, 28, 0.35)';
+                ctx.beginPath();
+                ctx.moveTo(0, topSurfaceY);
+                ctx.lineTo(this.width, topSurfaceY);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            /**
+             * Draws a rich, vintage folded newspaper or tied base bundle.
+             */
+            drawNewspaperBundle(ctx, block, isBase) {
+                ctx.save();
+                ctx.translate(block.x, block.y);
+                if (block.angle) {
+                    ctx.rotate(block.angle);
+                }
+
+                const w = block.w;
+                const h = block.h;
+                const halfW = w / 2;
+                const halfH = h / 2;
+
+                // Soft drop shadow
+                ctx.fillStyle = 'rgba(30, 27, 24, 0.22)';
+                ctx.beginPath();
+                ctx.roundRect(-halfW + 3, -halfH + 4, w, h, 4);
+                ctx.fill();
+
+                // Main newsprint body
+                ctx.fillStyle = isBase ? '#e6dec8' : '#f5f0e1';
+                ctx.strokeStyle = '#1e1b18';
+                ctx.lineWidth = 2.2;
+                ctx.beginPath();
+                ctx.roundRect(-halfW, -halfH, w, h, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                // Right-side folded edge shading
+                ctx.fillStyle = 'rgba(160, 145, 120, 0.32)';
+                ctx.fillRect(halfW - 14, -halfH + 2, 12, h - 4);
+
+                // Horizontal page layer lines (folded pages look)
+                ctx.strokeStyle = 'rgba(60, 52, 44, 0.35)';
+                ctx.lineWidth = 1;
+                const layers = isBase ? 5 : 3;
+                for (let l = 1; l <= layers; l++) {
+                    const ly = -halfH + (h / (layers + 1)) * l;
+                    ctx.beginPath();
+                    ctx.moveTo(-halfW + 5, ly);
+                    ctx.lineTo(halfW - 5, ly);
+                    ctx.stroke();
+                }
+
+                // Dark ink header strip & miniature column blocks on the top fold
+                ctx.fillStyle = '#292524';
+                const stripeW = (w * 0.42) + ((block.seed || 1) % 18);
+                ctx.fillRect(-halfW + 8, -halfH + 4, stripeW, 3.5);
+
+                // Red or blue vintage edition stamp on opposite corner
+                ctx.fillStyle = ((block.seed || 1) % 2 === 0) ? '#b91c1c' : '#1d4ed8';
+                ctx.fillRect(halfW - 22, -halfH + 4, 12, 3.5);
+
+                // If Base Bundle: draw brown hemp twine & knot
+                if (isBase) {
+                    ctx.fillStyle = '#3f3832';
+                    ctx.fillRect(-halfW + 10, -5, w - 20, 11);
+                    ctx.fillStyle = '#f5f0e1';
+                    ctx.font = 'bold 8px "Space Mono", monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('DAILY STACK', 0, 3);
+
+                    // Vertical twine straps
+                    ctx.strokeStyle = '#92400e';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(-halfW * 0.55, -halfH);
+                    ctx.lineTo(-halfW * 0.55, halfH);
+                    ctx.moveTo(halfW * 0.55, -halfH);
+                    ctx.lineTo(halfW * 0.55, halfH);
+                    ctx.stroke();
+                }
+
+                // Golden flash overlay on a PERFECT (+5) landing
+                if (block.flash && block.flash > 0) {
+                    ctx.fillStyle = `rgba(250, 204, 21, ${block.flash * 0.65})`;
+                    ctx.beginPath();
+                    ctx.roundRect(-halfW, -halfH, w, h, 4);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            drawParticles(ctx) {
+                for (const p of this.particles) {
+                    ctx.save();
+                    ctx.globalAlpha = p.alpha;
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h);
+                    ctx.restore();
+                }
+            }
+
+            drawFloatingTexts(ctx) {
+                for (const ft of this.floatingTexts) {
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, ft.alpha);
+                    ctx.translate(ft.x, ft.y);
+                    ctx.scale(ft.scale, ft.scale);
+
+                    ctx.font = 'bold 14px "Space Mono", monospace';
+                    const textWidth = ctx.measureText(ft.text).width;
+                    const padX = 8;
+                    const boxW = textWidth + padX * 2;
+                    const boxH = 24;
+
+                    // Pill background
+                    ctx.fillStyle = '#f6f1e3';
+                    ctx.strokeStyle = '#1e1b18';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.roundRect(-boxW / 2, -boxH / 2, boxW, boxH, 6);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Label text
+                    ctx.fillStyle = ft.color;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(ft.text, 0, 1);
+
+                    ctx.restore();
+                }
+            }
+
+            loop(timestamp) {
+                const dt = Math.min(0.05, (timestamp - this.lastTimestamp) / 1000);
+                this.lastTimestamp = timestamp;
+
+                this.update(dt);
+                this.draw();
+
+                requestAnimationFrame((ts) => this.loop(ts));
+            }
+        }
+
+        window.onload = function () {
+            new NewspaperStackGame();
+        };
+    </script>
+</body>
+</html>
