@@ -17,20 +17,24 @@
             margin: 0;
             padding: 0;
             width: 100%;
-            height: 100%;
+            height: 100dvh;
+            max-height: 100vh;
             overflow: hidden;
+            position: fixed;
+            inset: 0;
             background-color: #2b1d19;
             font-family: 'Space Mono', monospace;
         }
         .serif-title {
             font-family: 'Playfair Display', Georgia, serif;
         }
-        /* Mobile-first portrait container */
+        /* Mobile-first portrait container locked to phone screen height */
         #app-wrapper {
             position: relative;
             width: 100%;
-            max-width: 450px;
+            max-width: 430px;
             height: 100dvh;
+            max-height: 100vh;
             margin: 0 auto;
             background-color: #fa6f53;
             overflow: hidden;
@@ -418,12 +422,15 @@
                 this.highScore = parseInt(localStorage.getItem('dailyStack_highScore') || '0', 10);
                 this.bestEl.textContent = this.highScore;
 
-                // Dimensions & Constants
+                // Fixed Virtual Coordinate System (400x700) so mobile address-bar resize NEVER resets or shifts the tower
                 this.width = 400;
                 this.height = 700;
+                this.scaleX = 1;
+                this.scaleY = 1;
                 this.paperWidth = 132;
-                this.paperHeight = 26;
-                this.baseBlockHeight = 40;
+                this.paperHeight = 24;
+                this.baseBlockHeight = 38;
+                this.groundY = 635;
 
                 // Game State
                 this.state = 'START'; // START, PLAYING, COLLAPSING, GAMEOVER
@@ -434,6 +441,10 @@
                 this.floatingTexts = [];
                 this.particles = [];
                 this.bgClouds = [];
+
+                // Input & Spawn Cooldowns (prevents ghost taps / accidental immediate drops)
+                this.spawnCooldown = 0;
+                this.lastModalDismissTime = 0;
 
                 // Camera & Tower Stability Physics
                 this.cameraY = 0;
@@ -473,7 +484,11 @@
                 // Tap anywhere on the canvas to drop the newspaper
                 this.canvas.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    if (this.state === 'PLAYING') {
+                    e.stopPropagation();
+                    const now = performance.now();
+                    // Ignore ghost touches right after dismissing a modal or during spawn cooldown
+                    if (now - this.lastModalDismissTime < 280) return;
+                    if (this.state === 'PLAYING' && this.spawnCooldown <= 0) {
                         this.triggerHardDrop();
                     }
                 });
@@ -482,25 +497,39 @@
                 window.addEventListener('keydown', (e) => {
                     if ((e.code === 'Space' || e.code === 'ArrowDown') && this.state === 'PLAYING') {
                         e.preventDefault();
-                        this.triggerHardDrop();
+                        if (this.spawnCooldown <= 0) {
+                            this.triggerHardDrop();
+                        }
                     }
                 });
 
+                // Prevent clicks inside modals from bleeding through to the canvas
+                this.startModal.addEventListener('pointerdown', (e) => e.stopPropagation());
+                this.gameOverModal.addEventListener('pointerdown', (e) => e.stopPropagation());
+
                 // Start & Restart Buttons
                 document.getElementById('start-btn').addEventListener('click', (e) => {
+                    e.preventDefault();
                     e.stopPropagation();
+                    this.lastModalDismissTime = performance.now();
                     this.sfx.init();
                     this.startGame();
                 });
 
                 document.getElementById('restart-btn').addEventListener('click', (e) => {
+                    e.preventDefault();
                     e.stopPropagation();
+                    if (this.state === 'COLLAPSING' && this.collapseTimer < 0.6) return;
+                    this.lastModalDismissTime = performance.now();
                     this.sfx.init();
                     this.startGame();
                 });
 
                 // Mute Button
-                document.getElementById('mute-btn').addEventListener('click', (e) => {
+                const muteBtn = document.getElementById('mute-btn');
+                muteBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+                muteBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     this.sfx.init();
                     const isMuted = this.sfx.toggleMute();
@@ -509,27 +538,26 @@
                 });
             }
 
+            /**
+             * Adjusts only the physical canvas pixel buffer and scaling transform.
+             * Never modifies world coordinates (`this.width`, `this.height`, `this.groundY`, or `this.stack`)
+             * so mobile browser bar resizing never resets or corrupts an active game.
+             */
             resize() {
                 const wrapper = document.getElementById('app-wrapper');
                 const rect = wrapper.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return;
+
                 const dpr = window.devicePixelRatio || 1;
+                this.canvas.width = Math.round(rect.width * dpr);
+                this.canvas.height = Math.round(rect.height * dpr);
 
-                this.width = rect.width;
-                this.height = rect.height;
-
-                this.canvas.width = this.width * dpr;
-                this.canvas.height = this.height * dpr;
-                this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-                // Responsive newspaper dimensions relative to portrait width
-                this.paperWidth = Math.min(144, Math.max(112, Math.round(this.width * 0.34)));
-                this.paperHeight = 25;
-                this.baseBlockHeight = 38;
-                this.groundY = this.height - 70;
+                this.scaleX = (rect.width * dpr) / this.width;
+                this.scaleY = (rect.height * dpr) / this.height;
             }
 
             resetWorldPreview() {
-                this.groundY = this.height - 70;
+                this.groundY = 635;
                 this.stack = [
                     {
                         x: this.width / 2,
@@ -572,17 +600,17 @@
 
             /**
              * Spawns a new floating newspaper at the top of the current camera view.
-             * Gradually scales both downward velocity and horizontal zig-zag speed.
+             * Once the stack reaches ~42% up from the bottom, smoothly scrolls the camera upward
+             * so there is always generous vertical room for the next newspaper to zig-zag down.
              */
             spawnNextPaper() {
                 const topBlock = this.stack[this.stack.length - 1];
                 const topEdgeY = topBlock.y - topBlock.h / 2;
 
-                // Keep the top of the tower comfortably in the lower-third of the screen
-                const idealScreenY = this.height * 0.72;
-                const currentScreenY = topEdgeY + this.targetCameraY;
-                if (currentScreenY < idealScreenY) {
-                    this.targetCameraY += (idealScreenY - currentScreenY);
+                // Keep the top of the stack in the lower 42% of the screen (screenY >= 406 in 700px space)
+                const desiredTopScreenY = this.height * 0.58;
+                if (topEdgeY + this.targetCameraY < desiredTopScreenY) {
+                    this.targetCameraY = desiredTopScreenY - topEdgeY;
                 }
 
                 // Difficulty scaling with each stacked newspaper
@@ -591,12 +619,20 @@
                 this.speedEl.textContent = speedMultiplier.toFixed(1) + 'x';
 
                 // Vertical float speed & horizontal zig-zag frequency
-                const floatFallSpeed = (44 + Math.min(85, levelFactor * 3.1));
-                const swayFrequency = (2.15 + Math.min(2.6, levelFactor * 0.085));
+                const floatFallSpeed = (42 + Math.min(85, levelFactor * 3.0));
+                const swayFrequency = (2.1 + Math.min(2.6, levelFactor * 0.085));
 
                 // Swing amplitude covers enough width so the player must time their tap
                 const maxSwing = (this.width - this.paperWidth) * 0.45;
-                const spawnY = -this.targetCameraY + 118;
+
+                // Spawn high enough in world space (just below the top HUD in target screen space)
+                // and guarantee at least 260px of vertical float distance above the current top of the stack
+                const hudBottomWorldY = -this.targetCameraY + 128;
+                const safeWorldY = topEdgeY - 275;
+                const spawnY = Math.min(hudBottomWorldY, safeWorldY);
+
+                // 250ms spawn cooldown prevents accidental double-taps from immediately dropping the new paper
+                this.spawnCooldown = 0.25;
 
                 this.activePaper = {
                     x: this.width / 2,
@@ -609,7 +645,7 @@
                     swayFreq: swayFrequency,
                     swayTime: Math.random() * Math.PI * 2,
                     floatSpeedY: floatFallSpeed,
-                    dropSpeedY: 1180,
+                    dropSpeedY: 1220,
                     tiltAngle: 0,
                     seed: Math.floor(Math.random() * 1000),
                     vx: 0,
@@ -896,8 +932,12 @@
              * MAIN UPDATE STEP
              */
             update(dt) {
-                // Smooth camera tracking
-                this.cameraY += (this.targetCameraY - this.cameraY) * Math.min(1, dt * 6.5);
+                if (this.spawnCooldown > 0) {
+                    this.spawnCooldown = Math.max(0, this.spawnCooldown - dt);
+                }
+
+                // Smooth upward camera tracking as the stack grows
+                this.cameraY += (this.targetCameraY - this.cameraY) * Math.min(1, dt * 6.0);
 
                 // Subtle background clouds drift
                 for (const cloud of this.bgClouds) {
@@ -984,8 +1024,8 @@
 
                     // 2. Check Collision with the Existing Stack while still Floating
                     if (paperBottomY >= topSurfaceY) {
-                        // Did the floating paper hit any block in the tower?
-                        for (let i = this.stack.length - 1; i >= 0; i--) {
+                        // Did the floating paper hit the top of the tower?
+                        for (let i = this.stack.length - 1; i >= Math.max(0, this.stack.length - 6); i--) {
                             const b = this.stack[i];
                             const horizOverlap = Math.abs(paper.x - b.x) < (paper.w + b.w) * 0.48;
                             const vertOverlap = Math.abs(paper.y - b.y) < (paper.h + b.h) * 0.48;
@@ -1002,11 +1042,11 @@
                             }
                         }
 
-                        // 3. Check if the floating paper descended past the top surface of the stack without hitting it
+                        // 3. Check if the floating paper descended past the top surface of the stack without landing on it
                         if (paper.y - paper.h / 2 > topSurfaceY + 4) {
                             const sideDir = paper.x >= topBlock.x ? 1 : -1;
                             this.triggerCollapse(
-                                'Passed Top of Stack!',
+                                'Passed Stack Level!',
                                 '"The newspaper floated below the top of the pile—impossible to stack now!"',
                                 sideDir,
                                 true
@@ -1021,7 +1061,7 @@
                     const newBottomY = paper.y + paper.h / 2;
 
                     // Check if the dropping paper crossed the top surface of the stack
-                    if (prevBottomY <= topSurfaceY + 8 && newBottomY >= topSurfaceY) {
+                    if (prevBottomY <= topSurfaceY + 12 && newBottomY >= topSurfaceY) {
                         const absDx = Math.abs(paper.x - topBlock.x);
                         if (absDx < paper.w) {
                             this.evaluateLanding(paper, topBlock);
@@ -1030,7 +1070,7 @@
                     }
 
                     // If it missed horizontally, let it fall slightly past the top surface then trigger Game Over
-                    if (paper.y - paper.h / 2 > topSurfaceY + 36 || newBottomY >= this.groundY) {
+                    if (paper.y - paper.h / 2 > topSurfaceY + 36) {
                         const dir = paper.x >= topBlock.x ? 1 : -1;
                         this.triggerCollapse(
                             'Missed the Stack!',
@@ -1048,6 +1088,7 @@
              */
             draw() {
                 const ctx = this.ctx;
+                ctx.setTransform(this.scaleX, 0, 0, this.scaleY, 0, 0);
                 ctx.clearRect(0, 0, this.width, this.height);
 
                 // 1. Primary Background (#fa6f53) + Subtle Vintage Halftone & Sunburst
@@ -1154,16 +1195,16 @@
 
             drawHeightMarkers(ctx) {
                 ctx.save();
-                ctx.fillStyle = 'rgba(30, 27, 24, 0.35)';
-                ctx.strokeStyle = 'rgba(30, 27, 24, 0.22)';
+                ctx.fillStyle = 'rgba(30, 27, 24, 0.42)';
+                ctx.strokeStyle = 'rgba(30, 27, 24, 0.25)';
                 ctx.lineWidth = 1;
                 ctx.font = 'bold 10px "Space Mono", monospace';
 
-                // Draw milestone lines every 5 newspapers
-                for (let n = 5; n <= Math.max(30, this.stackedCount + 15); n += 5) {
+                // Draw milestone lines every 5 newspapers up to any height
+                for (let n = 5; n <= Math.max(40, this.stackedCount + 20); n += 5) {
                     const y = this.groundY - this.baseBlockHeight - (n * this.paperHeight);
                     const screenY = y + this.cameraY;
-                    if (screenY < 80 || screenY > this.height - 40) continue;
+                    if (screenY < 95 || screenY > this.height - 25) continue;
 
                     ctx.beginPath();
                     ctx.moveTo(0, y);
